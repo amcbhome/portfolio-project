@@ -1,135 +1,168 @@
-# Save this block as app.py
 import streamlit as st
-from pulp import LpMaximize, LpProblem, LpVariable, value
+from pulp import LpMinimize, LpProblem, LpVariable, lpSum, value
 
-# Page Configuration for BI Presentation
+# Page Configuration
 st.set_page_config(
-    page_title="Prescriptive Analytics Engine", page_icon="📊", layout="wide"
+    page_title="Supply Chain Network Optimizer", page_icon="🚛", layout="wide"
 )
 
-st.title("📊 Prescriptive Analytics: Operations Optimization Engine")
+st.title("🚛 Prescriptive Analytics: Supply Chain Network Optimization Engine")
 st.markdown(
     """
-This decision-support system transitions traditional financial linear programming from manual models to an interactive software layer. 
-By utilizing the **PuLP** optimization library, the application identifies the optimal product mix to maximize contribution margin while reporting real-time resource utilization and slack capacity.
+**ACCA SBL Case Study Upgrade:** This engine optimizes a logistics network by transitioning a 3x3 matrix distribution problem from Excel Solver to Python's `PuLP` framework. 
+It calculates the most cost-effective routes from multiple supply depots to retail stores while monitoring capacity bottlenecks and distribution slack.
 """
 )
 
-# Sidebar - Parameter Customization Layer
-st.sidebar.header("🔧 Interactive Parameters & Constraints")
+# --- Data Initializations ---
+depots = ["D1", "D2", "D3"]
+stores = ["Store 1", "Store 2", "Store 3"]
 
-st.sidebar.subheader("Objective Function Coefficients")
-c_prod_a = st.sidebar.number_input(
-    "Product A Unit Contribution (£)", min_value=0.0, value=30.0, step=1.0
+# Distance Matrix (Excel Rows C7:E9)
+default_distances = {
+    "D1": {"Store 1": 22, "Store 2": 33, "Store 3": 40},
+    "D2": {"Store 1": 27, "Store 2": 30, "Store 3": 22},
+    "D3": {"Store 1": 36, "Store 2": 20, "Store 3": 25},
+}
+
+# --- Sidebar Parameter Customization Layer ---
+st.sidebar.header("⚙️ Supply Chain Parameters")
+
+cost_per_mile = st.sidebar.number_input(
+    "Cost of TV Delivery per Mile (£)", min_value=0.0, value=5.0, step=0.50
 )
-c_prod_b = st.sidebar.number_input(
-    "Product B Unit Contribution (£)", min_value=0.0, value=40.0, step=1.0
+
+st.sidebar.subheader("📦 Depot Supply Capacity")
+supply_caps = {
+    "D1": st.sidebar.number_input("D1 Capacity", value=2500),
+    "D2": st.sidebar.number_input("D2 Capacity", value=3100),
+    "D3": st.sidebar.number_input("D3 Capacity", value=1250),
+}
+
+st.sidebar.subheader("🏪 Store Demand Capacity")
+demand_caps = {
+    "Store 1": st.sidebar.number_input("Store 1 Capacity", value=2000),
+    "Store 2": st.sidebar.number_input("Store 2 Capacity", value=3000),
+    "Store 3": st.sidebar.number_input("Store 3 Capacity", value=2000),
+}
+
+# --- Dynamic Distance Matrix Input Matrix in Main Panel ---
+st.subheader("📍 Route Distance Configuration (Miles)")
+cols = st.columns(3)
+distances = {}
+for i, depot in enumerate(depots):
+    distances[depot] = {}
+    with cols[i]:
+        st.markdown(f"**From Depot: {depot}**")
+        for store in stores:
+            distances[depot][store] = st.number_input(
+                f"To {store}",
+                min_value=0,
+                value=default_distances[depot][store],
+                key=f"dist_{depot}_{store}",
+            )
+
+# --- PuLP Optimization Execution ---
+# Define Problem: Minimize Logistics Cost
+model = LpProblem(name="Supply_Chain_Minimization", sense=LpMinimize)
+
+# Decision Variables: Quantities shipped along each route index (i, j)
+routes = [(d, s) for d in depots for s in stores]
+ship_vars = LpVariable.dicts(
+    name="Ship", indexs=(depots, stores), lowBound=0, cat="Continuous"
 )
 
-st.sidebar.subheader("Resource Availability Limits")
-max_material = st.sidebar.number_input(
-    "Material Capacity Limit", min_value=0.0, value=15000.0, step=500.0
+# Objective Function: Sum of (Units Shipped * Distance * Cost per Mile)
+model += (
+    lpSum(
+        [
+            ship_vars[d][s] * distances[d][s] * cost_per_mile
+            for (d, s) in routes
+        ]
+    ),
+    "Total_Transportation_Cost",
 )
-max_labor = st.sidebar.number_input(
-    "Labor/Logistics Hours Limit", min_value=0.0, value=16000.0, step=500.0
-)
 
-st.sidebar.subheader("Resource Utilization per Unit")
-mat_a = st.sidebar.slider("Product A Material Usage", 1.0, 10.0, 3.0, 0.5)
-mat_b = st.sidebar.slider("Product B Material Usage", 1.0, 10.0, 5.0, 0.5)
-lab_a = st.sidebar.slider("Product A Labor Allocation", 1.0, 10.0, 4.0, 0.5)
-lab_b = st.sidebar.slider("Product B Labor Allocation", 1.0, 10.0, 4.0, 0.5)
-
-# --- PuLP Optimization Engine Core Execution ---
-# Instantiate Optimization Problem
-model = LpProblem(name="Product_Mix_Optimization", sense=LpMaximize)
-
-# Define Continuous Decision Variables bounded by Non-Negativity
-x1 = LpVariable(name="Product_A_Qty", lowBound=0, cat="Continuous")
-x2 = LpVariable(name="Product_B_Qty", lowBound=0, cat="Continuous")
-
-# Register Objective Function
-model += c_prod_a * x1 + c_prod_b * x2, "Total_Contribution"
-
-# Register Structural Constraints
-model += mat_a * x1 + mat_b * x2 <= max_material, "Material_Constraint"
-model += lab_a * x1 + lab_b * x2 <= max_labor, "Labor_Constraint"
-
-# Run Solver Engine
-model.solve()
-
-# --- Business Intelligence Presentation Layer ---
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("🎯 Optimization Results")
-    if model.status == 1:
-        opt_a = x1.varValue
-        opt_b = x2.varValue
-        total_revenue = value(model.objective)
-
-        st.success(f"**Optimal Solution Found**: Status = Successful")
-        metrics_col1, metrics_col2 = st.columns(2)
-        metrics_col1.metric(label="Product A Optimal Units", value=f"{opt_a:,.2f}")
-        metrics_col2.metric(label="Product B Optimal Units", value=f"{opt_b:,.2f}")
-
-        st.metric(
-            label="Maximized Total Contribution", value=f"£{total_revenue:,.2f}"
-        )
-    else:
-        st.error("The current optimization parameters yield an infeasible solution.")
-
-with col2:
-    st.subheader("📉 Resource Slack & Constraint Diagnostic")
-
-    # Extracting Slack and calculating consumption figures
-    mat_slack = model.constraints["Material_Constraint"].slack
-    lab_slack = model.constraints["Labor_Constraint"].slack
-
-    mat_consumed = max_material - mat_slack
-    lab_consumed = max_labor - lab_slack
-
-    # UI Visual Reporting
-    st.write("**Material Resource Breakdown**")
-    st.progress(min(max(mat_consumed / max_material, 0.0), 1.0))
-    st.caption(
-        f"Consumed: {mat_consumed:,.2f} / Total: {max_material:,.2f} units"
+# Constraints Group 1: Shipped totals cannot exceed Depot Supply Capacity
+for d in depots:
+    model += (
+        lpSum([ship_vars[d][s] for s in stores]) <= supply_caps[d],
+        f"Supply_Constraint_{d}",
     )
 
-    st.write("**Labor/Logistics Capacity Breakdown**")
-    st.progress(min(max(lab_consumed / max_labor, 0.0), 1.0))
-    st.caption(f"Consumed: {lab_consumed:,.2f} / Total: {max_labor:,.2f} hours")
+# Constraints Group 2: Total received units must match or meet Store Capacity limits
+# Looking closely at the Excel screenshot, the Solver constraints read: Received <= Store Capacity
+for s in stores:
+    model += (
+        lpSum([ship_vars[d][s] for d in depots]) <= demand_caps[s],
+        f"Demand_Constraint_{s}",
+    )
 
-# --- Prescriptive Analytics & Slack Capacity Discussion ---
-st.subheader("💡 Managerial Insights & Analytical Diagnostics")
-insight_col1, insight_col2 = st.columns(2)
+# Execute Solver Engine
+model.solve()
 
-with insight_col1:
-    st.markdown("#### Material Constraints")
-    if mat_slack == 0:
-        st.warning(
-            "⚠️ **Material Capacity is BINDING.** Every unit of this resource is completely exhausted. "
-            "To scale operational throughput and increase profitability, supply chain managers should procure additional "
-            "materials or look into alternative suppliers with higher availability."
+# --- Business Intelligence UI Presentation Layer ---
+st.separator()
+res_col1, res_col2 = st.columns([3, 2])
+
+with res_col1:
+    st.subheader("📊 Optimal Shipping Matrix (TVs Transported)")
+    if model.status == 1:
+        # Create a display matrix summary
+        display_data = []
+        for d in depots:
+            row = {"Depot": d}
+            total_transported = 0
+            for s in stores:
+                val = ship_vars[d][s].varValue
+                row[s] = f"{val:,.0f}" if val else "0"
+                total_transported += val if val else 0
+            row["Total Transported"] = f"{total_transported:,.0f}"
+            row["Available Supply"] = f"{supply_caps[d]:,}"
+            display_data.append(row)
+
+        st.table(display_data)
+
+        total_cost = value(model.objective)
+        st.metric(
+            label="Minimized Total Logistical Cost", value=f"£{total_cost:,.2f}"
         )
     else:
-        st.info(
-            f"ℹ️ **Material Capacity is NON-BINDING (Slack Available: {mat_slack:,.2f} units).** "
-            "There is excess material remaining in stock. Sourcing more of this raw item will not boost financial performance. "
-            "Instead, investigate opportunities to redirect capital away from holding costs for this excess safety stock."
-        )
+        st.error("Optimization failed. Check capacity configurations.")
 
-with insight_col2:
-    st.markdown("#### Labor/Logistics Capacity")
-    if lab_slack == 0:
-        st.warning(
-            "⚠️ **Labor/Logistics Capacity is BINDING.** Workforce scheduling or logistics throughput is at absolute capacity. "
-            "Operational improvements should target bottleneck reduction, such as scheduling overtime or expanding logistics "
-            "fleet availability, to unlock further volume."
-        )
-    else:
-        st.info(
-            f"ℹ️ **Labor/Logistics Capacity is NON-BINDING (Slack Available: {lab_slack:,.2f} hours).** "
-            "The workforce has idle capacity under this configuration. Management can reallocate these specific labor hours "
-            "to maintenance, strategic training, or alternative product lines without impacting the optimized contribution margin."
-        )
+with res_col2:
+    st.subheader("📉 Network Capacity & Slack Diagnostics")
+
+    st.markdown("**Store Allocation Slack (Capacity vs Received)**")
+    for s in stores:
+        received = sum([ship_vars[d][s].varValue for d in depots])
+        capacity = demand_caps[s]
+        slack = capacity - received
+
+        st.write(f"*{s}*")
+        st.progress(float(received / capacity if capacity > 0 else 0))
+        if slack == 0:
+            st.caption(
+                f"🔒 Fully Binding Capacity reached: {received:,.0f} units."
+            )
+        else:
+            st.caption(
+                f"⚠️ Non-binding Slack: {slack:,.0f} units of remaining capacity."
+            )
+
+    st.markdown("<br>**Depot Inventory Utilization Slack**", unsafeDepth=2)
+    for d in depots:
+        shipped = sum([ship_vars[d][s].varValue for s in stores])
+        available = supply_caps[d]
+        inventory_slack = available - shipped
+
+        st.write(f"*{d}*")
+        st.progress(float(shipped / available if available > 0 else 0))
+        if inventory_slack == 0:
+            st.caption(
+                f"🔒 Supply Exhausted: {shipped:,.0f} units dispatched."
+            )
+        else:
+            st.caption(
+                f"📦 Safety Stock Slack: {inventory_slack:,.0f} units remaining at depot."
+            )

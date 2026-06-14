@@ -69,8 +69,9 @@ model = LpProblem(name="Supply_Chain_Minimization", sense=LpMinimize)
 # Decision Variables: Quantities shipped along each route index (i, j)
 routes = [(d, s) for d in depots for s in stores]
 ship_vars = LpVariable.dicts(
-    name="Ship", indexs=(depots, stores), lowBound=0, cat="Continuous"
+    name="Ship", indices=(depots, stores), lowBound=0, cat="Continuous"
 )
+
 
 # Objective Function: Sum of (Units Shipped * Distance * Cost per Mile)
 model += (

@@ -9,8 +9,14 @@ st.set_page_config(page_title="Logistics Optimizer", page_icon="🚛", layout="w
 
 st.title("🚛 Prescriptive Analytics: Supply Chain Optimization Engine")
 st.markdown("""
-**ACCA SBL Case Study Portfolio Project:** This architecture decouples the front-end interface (`app.py`) 
-from the mathematical optimization engine (`solver.py`) using modular programming principles.
+
+**ACCA SBL Case Study Portfolio Project**
+
+This digital tool helps business managers instantly find the most cost-effective way to ship goods across a logistics network. 
+
+By upgrading standard spreadsheet examples into an interactive application, this tool takes your available warehouse stock, delivery locations, and route distances to calculate an optimal distribution plan. It automatically identifies operational bottlenecks and flags where you have leftover storage capacity or supply shortages—helping you minimize overall transportation costs with a single click.
+
+Behind the scenes, the program is built using professional engineering standards. The code that handles the visual calculator screen (**app.py**) is kept completely separate from the core mathematical engine that solves the logistics problem (**solver.py**), making the system fast, secure, and easy to scale.
 """)
 
 # --- Baseline Framework Configurations ---

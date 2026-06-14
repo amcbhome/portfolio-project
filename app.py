@@ -1,14 +1,16 @@
+# app.py
 import streamlit as st
 import pandas as pd
-from pulp import LpMinimize, LpProblem, LpVariable, lpSum, value
+# Import the standalone analytics engine function
+from solver import optimize_supply_chain
 
 # Page Configuration
 st.set_page_config(page_title="Logistics Optimizer", page_icon="🚛", layout="wide")
 
 st.title("🚛 Prescriptive Analytics: Supply Chain Optimization Engine")
 st.markdown("""
-**ACCA SBL Case Study Portfolio Project:** Adjust the operational variables in the sidebar and layout grid. 
-Click the **Calculate Optimal Routing** button to execute the `PuLP` linear programming engine and refresh your business intelligence outputs.
+**ACCA SBL Case Study Portfolio Project:** This architecture decouples the front-end interface (`app.py`) 
+from the mathematical optimization engine (`solver.py`) using modular programming principles.
 """)
 
 # --- Baseline Framework Configurations ---
@@ -22,28 +24,24 @@ default_distances = {
 }
 default_df = pd.DataFrame(default_distances, index=depots)
 
-# --- Session State Management for Reset Button ---
+# --- Session State Management for Reset ---
 if "distance_matrix" not in st.session_state:
     st.session_state.distance_matrix = default_df.copy()
 
-# --- SIDEBAR: Parameter & Matrix Customization Layer ---
+# --- SIDEBAR: Parameters ---
 st.sidebar.header("⚙️ Network Configurations")
 
-# Reset Button Action
 if st.sidebar.button("🔄 Reset Distances to ACCA Defaults"):
     st.session_state.distance_matrix = default_df.copy()
     st.rerun()
 
 st.sidebar.subheader("📍 Route Distance Matrix (Miles)")
-st.sidebar.caption("Double-click any cell below to edit the transit miles directly:")
-# Interactive Data Editor in Sidebar
 edited_df = st.sidebar.data_editor(
     st.session_state.distance_matrix,
     hide_index=False,
     use_container_width=True,
     key="matrix_editor"
 )
-# Keep session state updated with modifications
 st.session_state.distance_matrix = edited_df
 
 st.sidebar.divider()
@@ -51,10 +49,9 @@ st.sidebar.subheader("💰 Financial Parameter")
 cost_per_mile = st.sidebar.number_input("Cost per Mile (£)", min_value=0.0, value=5.00, step=0.25)
 
 
-# --- MAIN PANEL: Calculator Inputs ---
+# --- MAIN PANEL: Form Calculator ---
 with st.form("optimization_calculator_form"):
     st.header("📋 Supply & Demand Capacities")
-    
     config_col1, config_col2 = st.columns(2)
     
     with config_col1:
@@ -77,66 +74,50 @@ with st.form("optimization_calculator_form"):
     submit_button = st.form_submit_button(label="⚡ Calculate Optimal Routing", use_container_width=True)
 
 
-# --- CALCULATOR EXECUTION & MAIN SCREEN OUTPUTS ---
+# --- MAIN PANEL OUTPUT LAYER ---
 if submit_button:
     st.divider()
     
-    # Convert Edited DataFrame back into dictionary for PuLP ingestion
-    distances = edited_df.to_dict(orient="index")
+    # Format current distance matrix state for engine input
+    distances_dict = edited_df.to_dict(orient="index")
     
-    # --- PuLP Optimization Processing Engine ---
-    model = LpProblem(name="Logistics_Minimization_Engine", sense=LpMinimize)
+    # CALL STANDALONE OPTIMIZATION ENGINE
+    status, final_cost, output_matrix = optimize_supply_chain(
+        depots=depots,
+        stores=stores,
+        distances=distances_dict,
+        supply_caps=supply_caps,
+        demand_caps=demand_caps,
+        cost_per_mile=cost_per_mile
+    )
 
-    # Multi-Indexed Decision Variables Matrix
-    routes = [(d, s) for d in depots for s in stores]
-    ship_vars = LpVariable.dicts(name="Ship", indices=(depots, stores), lowBound=0, cat="Continuous")
-
-    # Objective Function: Cost Matrix Formulation + Shortage Penalty
-    total_shipping_cost = lpSum([ship_vars[d][s] * distances[d][s] * cost_per_mile for (d, s) in routes])
-    total_unshipped_penalty = lpSum([(supply_caps[d] - lpSum([ship_vars[d][s] for s in stores])) * 100000 for d in depots])
-    
-    model += total_shipping_cost + total_unshipped_penalty, "Total_Objective"
-
-    # Supply Constraints (Outbound <= Available)
-    for d in depots:
-        model += lpSum([ship_vars[d][s] for s in stores]) <= supply_caps[d], f"Supply_{d}"
-
-    # Demand Constraints (Received <= Store Capacity)
-    for s in stores:
-        model += lpSum([ship_vars[d][s] for d in depots]) <= demand_caps[s], f"Demand_{s}"
-
-    # Execute Solution Run
-    model.solve()
-
-    # --- Main Screen Calculator Output Presentation ---
+    # Output Presentation Layer
     res_col1, res_col2 = st.columns([4, 3])
 
     with res_col1:
         st.subheader("📊 Calculated Shipping Manifest")
-        if model.status == 1:
+        if status == 1:
+            # Reconstruct dictionary into table structure for layout view
             matrix_rows = []
             for d in depots:
                 row = {"Source Depot": d}
                 for s in stores:
-                    val = ship_vars[d][s].varValue
-                    row[s] = int(val) if val else 0
+                    row[s] = output_matrix[d][s]
                 matrix_rows.append(row)
             
             df_result = pd.DataFrame(matrix_rows).set_index("Source Depot")
             st.dataframe(df_result, use_container_width=True)
             
-            total_cost = value(total_shipping_cost)
-            st.metric(label="Calculated Minimum Network Logistics Cost", value=f"£{total_cost:,.2f}")
+            st.metric(label="Calculated Minimum Network Logistics Cost", value=f"£{final_cost:,.2f}")
         else:
-            st.error("🚨 Infeasible Network State: Review parameters.")
+            st.error("🚨 Infeasible Network State: Check supply boundaries against core capacity allocations.")
 
     with res_col2:
         st.subheader("📉 Operational Capacity & Stock Slack")
-        
-        if model.status == 1:
+        if status == 1:
             st.markdown("**Depot Capacity Utilization (Supply Side Slack)**")
             for d in depots:
-                shipped = sum([ship_vars[d][s].varValue for s in stores])
+                shipped = sum(output_matrix[d][s] for s in stores)
                 available = supply_caps[d]
                 slack = available - shipped
                 
@@ -149,7 +130,7 @@ if submit_button:
                     
             st.markdown("<br>**Store Volume Shortfalls (Demand Side Slack)**", unsafe_allow_html=True)
             for s in stores:
-                received = sum([ship_vars[d][s].varValue for d in depots])
+                received = sum(output_matrix[d][s] for d in depots)
                 required = demand_caps[s]
                 shortfall = required - received
                 
@@ -160,4 +141,4 @@ if submit_button:
                 else:
                     st.caption(f"⚠️ *Under-allocated Slack:* Shortfall of {shortfall:,.0f} units due to supply limitations.")
 else:
-    st.info("💡 Adjust the numerical parameters or sidebar distance cells, then click 'Calculate Optimal Routing' to generate the distribution report.")
+    st.info("💡 Adjust parameters or sidebar distance cells, then click 'Calculate Optimal Routing' to generate the distribution report.")

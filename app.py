@@ -151,7 +151,8 @@ with res_col2:
                 f"⚠️ Non-binding Slack: {slack:,.0f} units of remaining capacity."
             )
 
-    st.markdown("<br>**Depot Inventory Utilization Slack**", unsafeDepth=2)
+    st.markdown("<br>**Depot Inventory Utilization Slack**", unsafe_allow_html=True)
+
     for d in depots:
         shipped = sum([ship_vars[d][s].varValue for s in stores])
         available = supply_caps[d]

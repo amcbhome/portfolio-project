@@ -103,7 +103,7 @@ for s in stores:
 model.solve()
 
 # --- Business Intelligence UI Presentation Layer ---
-st.separator()
+st.divider()
 res_col1, res_col2 = st.columns([3, 2])
 
 with res_col1:
